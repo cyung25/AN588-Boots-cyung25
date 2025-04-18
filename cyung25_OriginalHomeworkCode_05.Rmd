@@ -1,0 +1,67 @@
+---
+title: "cyung25_OriginalHomeworkCode_05"
+author: "Charles Yung"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+## To answer question 1, Begin by loading dataset in.
+library(curl)
+f <- curl("https://raw.githubusercontent.com/fuzzyatelin/fuzzyatelin.github.io/master/AN588_Fall23/KamilarAndCooperData.csv")
+d <- read.csv(f, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+head(d)
+## Next we transform the relevant columns (Home Range, and Body Mass). Then we plot the model.
+d$log_HomeRange <- log(d$HomeRange_km2)
+d$log_BodyMassF <- log(d$Body_mass_female_mean)
+d_clean <- na.omit(d[, c("log_HomeRange", "log_BodyMassF")])
+model <- lm(data = d_clean, log_HomeRange ~ log_BodyMassF)
+coef(model)
+summary(model)
+summary(model)$coefficients
+## For the linear regression of log HomeRange and log BodyMassF, the estimated intercept is -9.441 and the estimated slope is 1.036. This means that log body mass increases by the slope value. The intercept is the value of the Log home range when the log BodyMassF is 0. 
+```
+
+
+
+```{r}
+set.seed(1)
+set <- NULL ## dummy variable to hold 1000 results
+n <- 1000
+boot_coefs <- matrix(NA, nrow = n, ncol = 2) ## account for number of columns: the intercept and slope
+for (i in 1:n_boot) {
+  sample_indices <- sample(1:nrow(d_clean), replace = TRUE)
+  sample_data <- d_clean[sample_indices, ]
+  boot_model <- lm(log_HomeRange ~ log_BodyMassF, data = sample_data)
+  boot_coefs[i, ] <- coef(boot_model)
+}
+colnames(boot_coefs) <- c ("Intercept", "Slope")
+boot_se <- apply(boot_coefs, 2, sd)
+print(boot_se)
+boot_ci <- apply(boot_coefs, 2, quantile, probs = c(0.025, 0.975))
+print(boot_ci)
+## standard errors of the linear model
+lm_se <- summary(model)$coefficients[, "Std. Error"]
+
+## confidence intervals of the linear model
+lm_ci <- confint(model)
+
+## Combine all in a table
+comparison <- data.frame(
+  Parameter = c("Intercept", "Slope"),
+  SE_lm = lm_se,
+  SE_boot = boot_se,
+  CI_lm_lower = lm_ci[,1],
+  CI_lm_upper = lm_ci[,2],
+  CI_boot_lower = boot_ci[1,],
+  CI_boot_upper = boot_ci[2,]
+)
+
+print(comparison)
+
+##Writeup: My standard error values from the bootstrap are slightly smaller than the standard errors from the linear model (intercept beta 0 bootstrap is 0.61 compared to 0.67, beta 1 slope is 0.079 compared to 0.085). Concerning the confidence intervals, the bootstrap beta 0 intercept values and beta 1 slope values are similar, showing the linear model estimates are reliable. 
+
+## Charles' Comment: Going over this I feel like I have the majority of the code down, but I could use some advice on how to make my code more organized. Furthermore, if there are any missing equations or functions I need, please let me know as I check again!
+
+```
+
