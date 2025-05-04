@@ -1,0 +1,139 @@
+---
+title: "cyung25_FinalHomeworkCode_05"
+author: "Charles Yung"
+date: "`r Sys.Date()`"
+output: html_document
+---
+**Question 1**
+```{r}
+library(curl)
+f <- curl("https://raw.githubusercontent.com/fuzzyatelin/fuzzyatelin.github.io/master/AN588_Fall23/KamilarAndCooperData.csv")
+d <- read.csv(f, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+head(d)
+## Next we transform the relevant columns (Home Range, and Body Mass). Then we plot the model.
+d$log_HomeRange <- log(d$HomeRange_km2)
+d$log_BodyMassF <- log(d$Body_mass_female_mean)
+d_clean <- na.omit(d[, c("log_HomeRange", "log_BodyMassF")])
+model <- lm(data = d_clean, log_HomeRange ~ log_BodyMassF)
+coef(model)
+```
+The intercept is the beta-0 coefficient and the slope of log_BodyMassF is the beta-1 coefficient. These values mean that for every one unit increase in the log female body mass the log of the home range increases by the value of the slope.
+
+We will also take a summary model of our data to get our standard error, R-squared, F-statistic, and residual values. 
+```{r}
+summary(model)
+summary(model)$coefficients
+```
+**Question 2:**
+
+```{r}
+set.seed(1)
+set <- NULL ## dummy variable to hold 1000 results
+n <- 1000
+boot_coefs <- matrix(NA, nrow = n, ncol = 2) ## account for number of columns: the intercept and slope
+for (i in 1:n) { 
+  sample_indices <- sample(1:nrow(d_clean), replace = TRUE)
+  sample_data <- d_clean[sample_indices, ]
+  boot_model <- lm(log_HomeRange ~ log_BodyMassF, data = sample_data) ## so we are looking at how body size predicts home range size. 
+  boot_coefs[i, ] <- coef(boot_model) 
+}
+```
+
+Within our bootstrap model, we defined n (our number of replicates). I then initialized a matrix with 1000 rows and 2 columns (one for the intercept and one for the slope). This data matrix should now represent sampling distributions of my beta coefficients. 
+
+```{r}
+colnames(boot_coefs) <- c ("Intercept", "Slope") 
+mean(boot_coefs[,2]) 
+boot_se <- apply(boot_coefs, 2, sd) # CM: Interesting approach using apply() 
+print(boot_se)
+boot_ci <- apply(boot_coefs, 2, quantile, probs = c(0.025, 0.975))
+print(boot_ci) 
+```
+Bootstrap standard errors: Intercept (0.610) and Slope (0.0787). 
+
+Bootstrap 95% CI: Intercepts (-10.719, -8.266) and Slope (0.885, 1.191)
+```{r}
+## standard errors of the linear (original) model 
+lm_se <- summary(model)$coefficients[, "Std. Error"]
+
+## confidence intervals of the linear model
+lm_ci <- confint(model)
+
+## Combine all in a data frame for visualization.
+comparison <- data.frame(
+  Parameter = c("Intercept", "Slope"),
+  SE_lm = lm_se,
+  SE_boot = boot_se,
+  CI_lm_lower = lm_ci[,1],
+  CI_lm_upper = lm_ci[,2],
+  CI_boot_lower = boot_ci[1,],
+  CI_boot_upper = boot_ci[2,]
+)
+print(comparison)
+
+```
+The bootstrap standard error values are very close to the estimated values of the original linear model function, which indicates the coefficient estimate variability is consistent using either a parametric model or resampling-based approach.
+
+
+The confidence intervals obtained via bootstrapping also closely match the values of the original linear model. However, the bootstrap CIs are wider which makes sense since bootstrapping doesn't rely on normal residuals. However, the closeness of the confidence intervals show our model is stable. 
+
+
+**Extra credit:** 
+```{r}
+bootstrap_lm_summary <- function(d, m, conf.level = 0.95, n = 1000) {
+  # Fit the original model on the dataset
+model <- lm(log_HomeRange ~ log_BodyMassF, data = d) 
+original_coefs <- coef(model)
+lm_se <- summary(model)$coefficients[, "Std. Error"]
+lm_ci <- confint(model, level = conf.level)
+
+# Set up the matrix for bootstrapping results
+matrix_coefs <- matrix(NA, nrow = n, ncol = 2) ## account for number of columns: the intercept and slope
+for (i in 1:n) 
+colnames(matrix_coefs) <- names(original_coefs)
+
+# Perform bootstrap, then calculate bootstrap statistics.
+  for(i in 1:n) {
+    boot_indices <- sample(1:nrow(d), replace = TRUE)
+    boot_data <- d[boot_indices, ]
+    boot_model <- lm(log_HomeRange ~ log_BodyMassF, data = boot_data)
+    matrix_coefs[i, ] <- coef(boot_model)
+  }
+  mean(matrix_coefs[,2])
+  boot_means <- mean(matrix_coefs[,2])
+  boot_se <- apply(matrix_coefs, 2, sd) 
+  alpha <- 1 - conf.level
+  CI_boot_lower = apply(matrix_coefs, 2, quantile, probs = alpha / 2)
+  CI_boot_upper = apply(matrix_coefs, 2, quantile, probs = 1- alpha / 2)
+
+# Next, let's make our data frame.
+  
+ results <- data.frame(
+  coefficient = names(original_coefs),
+  original_estimate = original_coefs,
+  SE_lm = lm_se,
+  CI_lm_lower = lm_ci[,1],
+  CI_lm_upper = lm_ci[,2],
+  boot_estimate = boot_means,
+  SE_boot = boot_se,
+  CI_boot_lower = boot_ci[1,],
+  CI_boot_upper = boot_ci[2,]
+)
+  
+  return(results)
+}
+bootstrap_lm_summary(d, m = "log_HomeRange ~ log_BodyMassF")
+
+```
+
+Things I struggled with in the Homework:
+
+1: Data Organization- Breaking up my code into separate discrete chunks was very helpful for me to understand what I was doing. For example, in question 1 having a separate chunk to find the beta coefficients helped me understand what was going on before I wrote up the summary data model. 
+
+2: Understanding bootstrapping conceptually- I struggled to understand how sampling with replacement stimulated repeated experiments and gave a distribution of coefficent estimates, but now I understand i'm esentially resampling my dataset 1000 times to estimate uncertainty in my model. 
+
+3: I wasn't sure at first how to interpret the differences between the standard errors and confidence intervals of the original linear modeled data vs the bootstrapped data. 
+
+4: I wanted to combine all the results using the pivot wide function to show the SEs and CIs from both the model and bootstrap into a table that was easy to read and compare, but I kept running into error messages in my code and when I finally got the code to run I couldn't knit. I had to stay with the data frame to compare the SE and CI values. 
+
+5: For writing the Extra Credit function, I struggled to generalize the code into a function that could accept different models as inputs. I had to figure out how to pass the model formula and to extract coefficients and statistics correctly inside the function that was still in the same style as I did before. It also took some trial and error to return a clean and complete data frame. 
